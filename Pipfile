@@ -1,0 +1,23 @@
+[[source]]
+url = "https://pypi.python.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+boto3 = "*"
+requests = "*"
+pdfplumber = "==0.5.28"
+pydantic = "*"
+PyPDF2 = "==1.27.5"
+
+[dev-packages]
+autopep8 = "*"
+awscli = "*"
+pytest = "*"
+pytest-mock = "*"
+pytest-cov = "*"
+cfn-lint = "*"
+pipenv = "*"
+
+[requires]
+python_version = "3.8"

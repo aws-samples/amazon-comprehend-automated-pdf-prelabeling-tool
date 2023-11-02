@@ -1,0 +1,187 @@
+{
+  "StartAt": "Create execution id",
+  "States": {
+    "Create execution id": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "Payload.$": "$",
+        "FunctionName": "${LAMBDA_CREATE_EXECUTION_ID}"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 6,
+          "BackoffRate": 2
+        }
+      ],
+      "Comment": "Generate unique execution id",
+      "Next": "Comprehend Batch Prediction",
+      "ResultSelector": {
+        "execution_id.$": "$.Payload.execution_id"
+      },
+      "ResultPath": "$.output.create_execution_id"
+    },
+    "Comprehend Batch Prediction": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "Payload.$": "$",
+        "FunctionName": "${LAMBDA_COMPREHEND_BATCH_PREDICTION}"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 6,
+          "BackoffRate": 2
+        }
+      ],
+      "Next": "Comprehend Check Completion",
+      "ResultPath": "$.output.comprehend_batch_prediction",
+      "ResultSelector": {
+        "job_ids.$": "$.Payload.job_ids",
+        "comprehend_output_s3_zip.$": "$.Payload.comprehend_output_s3_zip",
+        "job_name_comprehend.$": "$.Payload.job_name_comprehend"
+      }
+    },
+    "Comprehend Check Completion": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "Payload.$": "$",
+        "FunctionName": "${LAMBDA_CHECK_COMPLETION}"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 6,
+          "BackoffRate": 2
+        }
+      ],
+      "Next": "Choice",
+      "ResultSelector": {
+        "finished.$": "$.Payload.finished"
+      },
+      "ResultPath": "$.output.check_completion"
+    },
+    "Choice": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.output.check_completion.finished",
+          "BooleanEquals": true,
+          "Next": "Combine Outputs"
+        },
+        {
+          "Variable": "$.output.check_completion.finished",
+          "BooleanEquals": false,
+          "Next": "Wait"
+        }
+      ],
+      "Default": "Fail"
+    },
+    "Fail": {
+      "Type": "Fail"
+    },
+    "Wait": {
+      "Type": "Wait",
+      "Seconds": 60,
+      "Next": "Comprehend Check Completion"
+    },
+    "Combine Outputs": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "Payload.$": "$",
+        "FunctionName": "${LAMBDA_COMBINE_OUTPUTS}"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 6,
+          "BackoffRate": 2
+        }
+      ],
+      "Next": "Write Manifest",
+      "ResultPath": "$.output.combine_outputs",
+      "ResultSelector": {
+        "outputs_manifest_s3_file.$": "$.Payload.outputs_manifest_s3_file"
+      }
+    },
+    "Write Manifest": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "Payload.$": "$",
+        "FunctionName": "${LAMBDA_WRITE_MANIFEST}"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 6,
+          "BackoffRate": 2
+        }
+      ],
+      "Next": "Create GT Labeling Job",
+      "ResultSelector": {
+        "uri_final_manifest.$": "$.Payload.uri_final_manifest"
+      },
+      "ResultPath": "$.output.write_manifest"
+    },
+    "Create GT Labeling Job": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "OutputPath": "$.Payload",
+      "Parameters": {
+        "Payload.$": "$",
+        "FunctionName": "${LAMBDA_CREATE_GT_LABELING_JOB}"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException"
+          ],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 6,
+          "BackoffRate": 2
+        }
+      ],
+      "End": true
+    }
+  },
+  "Comment": "Labeling Tool - Comprehend Version",
+  "TimeoutSeconds": 10800
+}

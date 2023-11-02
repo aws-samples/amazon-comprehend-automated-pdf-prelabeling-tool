@@ -1,0 +1,18 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  SAM Template for Nested application resources
+Resources:
+    ComprehendSemiStructuredDocAnnotation:
+      Type: AWS::Serverless::Application
+      Properties:
+        Location: comprehend-semi-structured-documents-annotation-template.yml
+    PrelabelingTool:
+      Type: AWS::Serverless::Application
+      Properties:
+        Location: Pre_labeling_tool/pre_labeling_tool_template.yaml
+        Parameters:
+          SemiStructuredDocumentsS3BucketArn: !GetAtt ComprehendSemiStructuredDocAnnotation.Outputs.SemiStructuredDocumentsS3BucketArn
+          SemiStructuredDocumentsS3Bucket: !GetAtt ComprehendSemiStructuredDocAnnotation.Outputs.SemiStructuredDocumentsS3Bucket
+          StackComprehendSemiStructuredDocAnnotation: !Ref ComprehendSemiStructuredDocAnnotation 
+      # DependsOn: ComprehendSemiStructuredDocAnnotation

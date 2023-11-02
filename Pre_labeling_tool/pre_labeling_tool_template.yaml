@@ -1,0 +1,553 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Pre_labeling_tool
+
+  Sample SAM Template for Pre_labeling_tool
+
+
+Globals:
+  Function:
+    Runtime: python3.8
+    Timeout: 60
+    Tags:
+      Author: AWS
+      Project: PrelabelingTool
+    Architectures:
+      - x86_64
+
+Parameters:
+  SemiStructuredDocumentsS3Bucket:
+    Description: 'Name of SemiStructuredDocuments S3 Bucket created by first stack'
+    Type: 'String'
+  SemiStructuredDocumentsS3BucketArn:
+    Description: 'Arn of the SemiStructuredDocuments S3 Bucket created by first stack'
+    Type: 'String'
+  StackComprehendSemiStructuredDocAnnotation:
+    Description: 'ComprehendSemiStructuredDocAnnotation Stack name'
+    Type: 'String'
+
+
+Resources:
+  
+  ################## IAM ##################
+  #### Roles ####
+  
+  PrelabelingCreateExecutionIdRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns: 
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+  
+  PrelabelingExecutePreannotationJobsMapStateRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns: 
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+  
+  PrelabelingMergePreAnnotationJobsOutputsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns: 
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+  
+  PrelabelingCreateGTLabelingJobRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns: 
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  PrelabelingTrainComprehendRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns: 
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+  
+  ComprehendBucketAccessRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: comprehend.amazonaws.com
+            Action: sts:AssumeRole
+    
+  ComprehendBatchPredictionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns: 
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+
+  ComprehendDescribeJobsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns: 
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  ComprehendCombineOutputsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns: 
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  ComprehendWriteManifestRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns: 
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+
+  FuzzyMatchingStepFunctionsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+  
+  ComprehendStepFunctionsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+
+  #### Policies ####
+  
+  PrelabelingAccessBucketPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+            - Effect: Allow
+              Action: 
+                - 's3:PutObject'
+                - 's3:GetObject'
+              Resource: !Sub '${SemiStructuredDocumentsS3BucketArn}/*'
+            - Effect: Allow
+              Action:
+                - 's3:ListBucket'
+              Resource: !Ref SemiStructuredDocumentsS3BucketArn
+      PolicyName: PrelabelingAccessBucketPolicy
+      Roles:
+        - Ref: PrelabelingCreateExecutionIdRole
+        - Ref: PrelabelingExecutePreannotationJobsMapStateRole
+        - Ref: PrelabelingMergePreAnnotationJobsOutputsRole
+        - Ref: PrelabelingCreateGTLabelingJobRole
+        - Ref: PrelabelingTrainComprehendRole
+        - Ref: FuzzyMatchingStepFunctionsRole
+        - Ref: ComprehendBatchPredictionRole
+        - Ref: ComprehendCombineOutputsRole
+        - Ref: ComprehendWriteManifestRole
+        - Ref: ComprehendBucketAccessRole
+  
+  TextractPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+            Action: 
+              - 'textract:StartDocumentTextDetection'
+              - 'textract:GetDocumentTextDetection'
+            Effect: Allow
+            Resource: "*"
+        Version: "2012-10-17"
+      PolicyName: TextractPolicy
+      Roles:
+        - Ref: PrelabelingExecutePreannotationJobsMapStateRole
+
+  TextractDetectDocumentTextPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+            Action: 
+              - 'textract:DetectDocumentText'
+            Effect: Allow
+            Resource: "*"
+        Version: "2012-10-17"
+      PolicyName: TextractDetectDocumentTextPolicy
+      Roles:
+        - Ref: ComprehendBatchPredictionRole
+
+  
+  ComprehendBatchPredictionPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+            Action: 
+              - 'comprehend:StartEntitiesDetectionJob'
+            Effect: Allow
+            Resource:
+              Fn::Sub: "arn:aws:comprehend:${AWS::Region}:${AWS::AccountId}:entity-recognizer/*"
+        Version: "2012-10-17"
+      PolicyName: ComprehendBatchPredictionPolicy
+      Roles:
+        - Ref: ComprehendBatchPredictionRole
+
+  ComprehendDescribeJobsPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+            Action:
+              - 'comprehend:DescribeEntitiesDetectionJob'
+            Effect: Allow
+            Resource:
+              Fn::Sub: "arn:aws:comprehend:${AWS::Region}:${AWS::AccountId}:entities-detection-job/*"
+        Version: "2012-10-17"
+      PolicyName: ComprehendDescribeJobsPolicy
+      Roles:
+        - Ref: ComprehendDescribeJobsRole
+
+  CloudFormationPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+            Action: 
+              - 'cloudformation:DescribeStacks'
+            Effect: Allow
+            Resource: !Ref StackComprehendSemiStructuredDocAnnotation
+        Version: "2012-10-17"
+      PolicyName: CloudFormationPolicy
+      Roles:
+        - Ref: PrelabelingCreateGTLabelingJobRole
+  
+  CreateLabelingJobPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+            Action: 
+              - 'sagemaker:CreateLabelingJob'
+            Effect: Allow
+            Resource:
+              Fn::Sub: "arn:aws:sagemaker:${AWS::Region}:${AWS::AccountId}:labeling-job/*"
+        Version: "2012-10-17"
+      PolicyName: CreateLabelingJobPolicy
+      Roles:
+        - Ref: PrelabelingCreateGTLabelingJobRole
+  
+  TrainComprehendPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+            Action: 
+              - 'comprehend:CreateEntityRecognizer'
+            Effect: Allow
+            Resource: 
+              Fn::Sub: "arn:aws:comprehend:${AWS::Region}:${AWS::AccountId}:entity-recognizer/*"
+        Version: "2012-10-17"
+      PolicyName: TrainComprehendPolicy
+      Roles:
+        - Ref: PrelabelingTrainComprehendRole
+
+
+  IAMPassRolePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+            Action: 
+              - 'iam:PassRole'
+            Effect: Allow
+            Resource:
+              Fn::Sub: "arn:aws:iam::${AWS::AccountId}:role/*"
+        Version: "2012-10-17"
+      PolicyName: IAMPassRolePolicy
+      Roles:
+        - Ref: PrelabelingCreateGTLabelingJobRole
+    
+  IAMPassRoleComprehendPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Statement:
+            Action: 
+              - 'iam:PassRole'
+            Effect: Allow
+            Resource:
+                - !GetAtt ComprehendBucketAccessRole.Arn
+        Version: "2012-10-17"
+      PolicyName: IAMPassRoleComprehendPolicy
+      Roles:
+        - Ref: ComprehendBatchPredictionRole
+        - Ref: PrelabelingTrainComprehendRole
+
+  StartExecutionPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+            - Effect: Allow
+              Action: 
+                - 'states:StartExecution'
+              Resource: 
+              - !GetAtt PrelabelingFuzzyMatchingStepFunctions.Arn
+      PolicyName: StartExecutionPolicy
+      Roles:
+        - Ref: FuzzyMatchingStepFunctionsRole
+        - Ref: ComprehendStepFunctionsRole
+  
+  LabelingToolFuzzyLambdaInvokePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+            - Effect: Allow
+              Action: 
+                - 'lambda:InvokeFunction'
+              Resource: 
+                - !GetAtt PrelabelingCreateExecutionId.Arn
+                - !GetAtt PrelabelingExecutePreannotationJobsMapState.Arn
+                - !GetAtt PrelabelingMergePreAnnotationJobsOutputs.Arn
+                - !GetAtt PrelabelingCreateGTLabelingJob.Arn
+                - !GetAtt PrelabelingTrainComprehend.Arn
+      PolicyName: LabelingToolFuzzyLambdaInvokePolicy
+      Roles:
+        - Ref: FuzzyMatchingStepFunctionsRole
+
+  LabelingToolComprehendLambdaInvokePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+            - Effect: Allow
+              Action: 
+                - 'lambda:InvokeFunction'
+              Resource: 
+                - !GetAtt PrelabelingCreateExecutionId.Arn
+                - !GetAtt ComprehendBatchPrediction.Arn
+                - !GetAtt ComprehendCheckCompletion.Arn
+                - !GetAtt ComprehendCombineOutputs.Arn
+                - !GetAtt ComprehendWriteManifest.Arn
+                - !GetAtt PrelabelingCreateGTLabelingJob.Arn
+      PolicyName: LabelingToolComprehendLambdaInvokePolicy
+      Roles:
+        - Ref: ComprehendStepFunctionsRole
+  
+  ################## LAMBDA ##################
+  
+  PrelabelingCreateExecutionId:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/lambda/code/prelabeling_create_execution_id/
+      Handler: prelabeling_create_execution_id.lambda_handler
+      Role: !GetAtt PrelabelingCreateExecutionIdRole.Arn
+    DependsOn:
+      - PrelabelingAccessBucketPolicy # cf https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-iam-policy.html#cfn-iam-policy-roles
+  
+  PrelabelingExecutePreannotationJobsMapState:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/lambda/code/prelabeling_execute_preannotation_jobs_mapstate/
+      Handler: prelabeling_execute_preannotation_jobs_mapstate.lambda_handler
+      Timeout: 300
+      MemorySize: 1769 # Increased memory since FuzzyMatchin is computationally expensive
+      Role: !GetAtt PrelabelingExecutePreannotationJobsMapStateRole.Arn
+    DependsOn:
+      - PrelabelingAccessBucketPolicy # cf https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-iam-policy.html#cfn-iam-policy-roles
+  
+  PrelabelingMergePreAnnotationJobsOutputs:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/lambda/code/prelabeling_merge_preannotation_jobs_outputs/
+      Handler: prelabeling_merge_preannotation_jobs_outputs.lambda_handler
+      Role: !GetAtt PrelabelingMergePreAnnotationJobsOutputsRole.Arn
+      Timeout: 300
+    DependsOn:
+      - PrelabelingAccessBucketPolicy
+  
+  PrelabelingCreateGTLabelingJob:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/lambda/code/prelabeling_create_gt_labeling_job/
+      Handler: prelabeling_create_gt_labeling_job.lambda_handler
+      Role: !GetAtt PrelabelingCreateGTLabelingJobRole.Arn
+      Environment:
+        Variables:
+          cfn_name: !Ref StackComprehendSemiStructuredDocAnnotation
+      Timeout: 300
+    DependsOn:
+      - PrelabelingAccessBucketPolicy
+  
+  PrelabelingTrainComprehend:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/lambda/code/prelabeling_train_comprehend_model/
+      Handler: prelabeling_train_comprehend_model.lambda_handler
+      Role: !GetAtt PrelabelingTrainComprehendRole.Arn
+      Environment:
+        Variables:
+          IAM_role_ARN_comprehend: !GetAtt ComprehendBucketAccessRole.Arn
+      Timeout: 300
+    DependsOn:
+      - PrelabelingAccessBucketPolicy
+
+
+  ComprehendBatchPrediction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/lambda/code/comprehend_prelabeling_comprehend_batch_prediction/
+      Handler: comprehend_prelabeling_comprehend_batch_prediction.lambda_handler
+      Role: !GetAtt ComprehendBatchPredictionRole.Arn
+      Environment:
+        Variables:
+          IAM_role_ARN_comprehend: !GetAtt ComprehendBucketAccessRole.Arn
+      Timeout: 900
+      MemorySize: 512
+    DependsOn:
+      - PrelabelingAccessBucketPolicy
+
+  ComprehendCheckCompletion:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/lambda/code/comprehend_prelabeling_check_comprehend_batch_prediction/
+      Handler: comprehend_prelabeling_check_comprehend_batch_prediction.lambda_handler
+      Role: !GetAtt ComprehendDescribeJobsRole.Arn
+      Timeout: 300
+    DependsOn:
+      - PrelabelingAccessBucketPolicy
+
+  ComprehendCombineOutputs:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/lambda/code/comprehend_prelabeling_combine_outputs/
+      Handler: comprehend_prelabeling_combine_outputs.lambda_handler
+      Role: !GetAtt ComprehendCombineOutputsRole.Arn
+      Timeout: 900
+      MemorySize: 8192
+      
+    DependsOn:
+      - PrelabelingAccessBucketPolicy
+  
+  ComprehendWriteManifest:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/lambda/code/comprehend_prelabeling_write_manifest/
+      Handler: comprehend_prelabeling_write_manifest.lambda_handler
+      Role: !GetAtt ComprehendWriteManifestRole.Arn
+      Timeout: 600
+      MemorySize: 8192
+    DependsOn:
+      - PrelabelingAccessBucketPolicy
+
+  ################## STATE MACHINE ##################
+  
+  PrelabelingFuzzyMatchingStepFunctions:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      DefinitionUri: src/statemachine/prelabeling_statemachine.asl.json
+      DefinitionSubstitutions:
+        PRELABELING_CREATE_EXECUTION_ID: !GetAtt PrelabelingCreateExecutionId.Arn
+        PRELABELING_EXECUTE_PREANNOTATION_JOBS: !GetAtt PrelabelingExecutePreannotationJobsMapState.Arn
+        PRELABELING_MERGE_PREANNOTATION_JOBS_OUTPUTS: !GetAtt PrelabelingMergePreAnnotationJobsOutputs.Arn
+        PRELABELING_CREATE_GT_LABELING_JOB: !GetAtt PrelabelingCreateGTLabelingJob.Arn
+        PRELABELING_TRAIN_COMPREHEND: !GetAtt PrelabelingTrainComprehend.Arn
+        BUCKET_STATEMACHINE_MAPS_STATE_LOGS: !Ref SemiStructuredDocumentsS3Bucket
+      Name: PrelabelingFuzzyMatchingStepFunctions
+      Role: !GetAtt FuzzyMatchingStepFunctionsRole.Arn
+      Type: STANDARD
+
+  PrelabelingComprehendStepFunctions:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      DefinitionUri: src/statemachine/prelabeling_with_comprehend.asl.json
+      DefinitionSubstitutions:
+        LAMBDA_CREATE_EXECUTION_ID: !GetAtt PrelabelingCreateExecutionId.Arn
+        LAMBDA_COMPREHEND_BATCH_PREDICTION: !GetAtt ComprehendBatchPrediction.Arn
+        LAMBDA_CHECK_COMPLETION: !GetAtt ComprehendCheckCompletion.Arn
+        LAMBDA_COMBINE_OUTPUTS: !GetAtt ComprehendCombineOutputs.Arn
+        LAMBDA_WRITE_MANIFEST: !GetAtt ComprehendWriteManifest.Arn
+        LAMBDA_CREATE_GT_LABELING_JOB: !GetAtt PrelabelingCreateGTLabelingJob.Arn
+      Name: PrelabelingComprehendStepFunctions
+      Role: !GetAtt ComprehendStepFunctionsRole.Arn
+      Type: STANDARD
+
+
+
+
+Outputs:
+  PrelabelingFuzzyMatchingStepFunctionsArn:
+    Description: "Arn of the Prelabeling Fuzzy Matching StepFunctions"
+    Value: !GetAtt PrelabelingFuzzyMatchingStepFunctions.Arn

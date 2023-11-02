@@ -1,0 +1,4 @@
+fuzzywuzzy
+python-Levenshtein
+amazon-textract-caller
+numpy

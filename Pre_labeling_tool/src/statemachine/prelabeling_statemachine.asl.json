@@ -1,0 +1,214 @@
+{
+    "Comment": "FuzzyMatching version",
+    "TimeoutSeconds": 10800,
+    "StartAt": "Create execution id",
+    "States": {
+      "Create execution id": {
+        "Type": "Task",
+        "Resource": "arn:aws:states:::lambda:invoke",
+        "Parameters": {
+          "FunctionName": "${PRELABELING_CREATE_EXECUTION_ID}",
+          "Payload.$": "$"
+        },
+        "Retry": [
+          {
+            "ErrorEquals": [
+              "Lambda.ServiceException",
+              "Lambda.AWSLambdaException",
+              "Lambda.SdkClientException",
+              "Lambda.TooManyRequestsException"
+            ],
+            "IntervalSeconds": 2,
+            "MaxAttempts": 6,
+            "BackoffRate": 2
+          }
+        ],
+        "Next": "Map",
+        "ResultSelector": {
+          "execution_id.$": "$.Payload.execution_id"
+        },
+        "ResultPath": "$.output.create_execution_id"
+      },
+      "Map": {
+        "Type": "Map",
+        "ItemProcessor": {
+          "ProcessorConfig": {
+            "Mode": "DISTRIBUTED",
+            "ExecutionType": "STANDARD"
+          },
+          "StartAt": "prelabeling_execute_preannotation_jobs_mapstate",
+          "States": {
+            "prelabeling_execute_preannotation_jobs_mapstate": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "OutputPath": "$.Payload",
+              "Parameters": {
+                "Payload.$": "$",
+                "FunctionName": "${PRELABELING_EXECUTE_PREANNOTATION_JOBS}"
+              },
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 2,
+                  "MaxAttempts": 6,
+                  "BackoffRate": 2
+                }
+              ],
+              "End": true
+            }
+          }
+        },
+        "Next": "Merge individual annotation files",
+        "MaxConcurrency": 2,
+        "ItemReader": {
+          "Resource": "arn:aws:states:::s3:getObject",
+          "ReaderConfig": {
+            "InputType": "JSON"
+          },
+          "Parameters": {
+            "Bucket.$": "$.premanifest.bucket",
+            "Key.$": "$.premanifest.key"
+          }
+        },
+        "Label": "Map",
+        "ResultWriter": {
+          "Resource": "arn:aws:states:::s3:putObject",
+          "Parameters": {
+            "Bucket": "${BUCKET_STATEMACHINE_MAPS_STATE_LOGS}",
+            "Prefix": "step-functions-debug"
+          }
+        },
+        "ItemSelector": {
+          "output.$": "$.output",
+          "premanifest_keys.$": "$$.Map.Item.Value"
+        },
+        "ResultPath": null
+      },
+      "Merge individual annotation files": {
+        "Type": "Task",
+        "Resource": "arn:aws:states:::lambda:invoke",
+        "Parameters": {
+          "FunctionName": "${PRELABELING_MERGE_PREANNOTATION_JOBS_OUTPUTS}",
+          "Payload": {
+            "execution_id.$": "$.output.create_execution_id.execution_id"
+          }
+        },
+        "Retry": [
+          {
+            "ErrorEquals": [
+              "Lambda.ServiceException",
+              "Lambda.AWSLambdaException",
+              "Lambda.SdkClientException",
+              "Lambda.TooManyRequestsException"
+            ],
+            "IntervalSeconds": 2,
+            "MaxAttempts": 6,
+            "BackoffRate": 2
+          }
+        ],
+        "Next": "Parallel",
+        "ResultSelector": {
+            "uri_final_manifest.$": "$.Payload.consolidated_manifest_s3_path"
+        },
+        "ResultPath": "$.output.write_manifest"
+      },
+    "Parallel": {
+      "Type": "Parallel",
+      "Next": "Success",
+      "Branches": [
+        {
+          "StartAt": "Create Comprehend model",
+          "States": {
+            "Create Comprehend model": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$.comprehend_parameters",
+                  "IsPresent": true,
+                  "Next": "Start Comprehend training job"
+                }
+              ],
+              "Default": "Success (2)"
+            },
+            "Start Comprehend training job": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "OutputPath": "$.Payload",
+              "Parameters": {
+                "Payload.$": "$",
+                "FunctionName": "${PRELABELING_TRAIN_COMPREHEND}"
+              },
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 2,
+                  "MaxAttempts": 6,
+                  "BackoffRate": 2
+                }
+              ],
+              "Next": "Success (2)"
+            },
+            "Success (2)": {
+              "Type": "Succeed"
+            }
+          }
+        },
+        {
+          "StartAt": "Create GT labeling job?",
+          "States": {
+            "Create GT labeling job?": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$.work_team_name",
+                  "IsPresent": true,
+                  "Next": "Create GT Labeling Job"
+                }
+              ],
+              "Default": "Success (1)"
+            },
+            "Create GT Labeling Job": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "OutputPath": "$.Payload",
+              "Parameters": {
+                "FunctionName": "${PRELABELING_CREATE_GT_LABELING_JOB}",
+                "Payload.$": "$"
+              },
+              "Retry": [
+                {
+                  "ErrorEquals": [
+                    "Lambda.ServiceException",
+                    "Lambda.AWSLambdaException",
+                    "Lambda.SdkClientException",
+                    "Lambda.TooManyRequestsException"
+                  ],
+                  "IntervalSeconds": 2,
+                  "MaxAttempts": 6,
+                  "BackoffRate": 2
+                }
+              ],
+              "Next": "Success (1)"
+            },
+            "Success (1)": {
+              "Type": "Succeed"
+            }
+          }
+        }
+      ]
+    },
+    "Success": {
+      "Type": "Succeed"
+    }
+  }
+}

@@ -1,0 +1,31 @@
+file_name,entity_type,expected_text
+bank_stmt_0.pdf,bank_name,AnyCompany Bank
+bank_stmt_0.pdf,customer_name,JANE DOE
+bank_stmt_0.pdf,checking_number,003884257406
+bank_stmt_0.pdf,checking_amount,"19,102.60"
+bank_stmt_0.pdf,savings_number,388425740636
+bank_stmt_0.pdf,savings_amount,"9,762.71"
+bank_stmt_1.pdf,bank_name,AnyCompany Bank
+bank_stmt_1.pdf,customer_name,MARIA GARCIA
+bank_stmt_1.pdf,checking_number,004582371449
+bank_stmt_1.pdf,checking_amount,7.373.54
+bank_stmt_1.pdf,savings_number,458237144936
+bank_stmt_1.pdf,savings_amount,"9,724.15"
+bank_stmt_12.pdf,bank_name,AnyCompany Credit Union
+bank_stmt_12.pdf,customer_name,MARY MAJOR
+bank_stmt_12.pdf,checking_number,001131510083
+bank_stmt_12.pdf,checking_amount,13.976.08
+bank_stmt_12.pdf,savings_number,113151008336
+bank_stmt_12.pdf,savings_amount,"19,925.76"
+bank_stmt_11.pdf,bank_name,AnyCompany Financial Services
+bank_stmt_11.pdf,customer_name,JOHN STILES
+bank_stmt_11.pdf,checking_number,005629172149
+bank_stmt_11.pdf,checking_amount,"11,773.68"
+bank_stmt_11.pdf,savings_number,562917214936
+bank_stmt_11.pdf,savings_amount,14.284.98
+bank_stmt_10.pdf,bank_name,AnyCompany Finance Ltd
+bank_stmt_10.pdf,customer_name,MARTHA RIVERA
+bank_stmt_10.pdf,checking_number,005899666971
+bank_stmt_10.pdf,checking_amount,"16,150.77"
+bank_stmt_10.pdf,savings_number,589966697136
+bank_stmt_10.pdf,savings_amount,"15,391.92"
